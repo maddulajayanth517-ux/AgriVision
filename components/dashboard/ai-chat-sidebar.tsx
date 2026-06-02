@@ -233,7 +233,7 @@ export function AIChatSidebar({
         )}
         {error && (
           <p className="mt-2 text-[10px] text-red-400">
-            Connection error. AI Saathi will retry — or check .env.local for OPENAI_API_KEY.
+            Connection error. AI Saathi will retry — or check .env.local for GROQ_API_KEY.
           </p>
         )}
       </ScrollArea>

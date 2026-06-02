@@ -1,74 +1,65 @@
-import { streamText, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse } from "ai"
-import { buildAISaathiSystemPrompt, type FarmContext } from "@/lib/ai-system-prompt"
+﻿import type { FarmContext } from "@/lib/ai-system-prompt"
+import { buildAISaathiSystemPrompt } from "@/lib/ai-system-prompt"
+import { resolveSearchQuery } from "@/lib/location-service"
+import { openWeatherCurrent, openWeatherForecast } from "@/lib/api-helpers"
+import { streamText, UIMessage, convertToModelMessages } from "ai"
+import { groq } from "@ai-sdk/groq"
 
-function offlineSaathiReply(lastUserText: string, ctx: FarmContext): string {
-  const crop = ctx.cropName ?? "your crop"
-  const region = ctx.state ?? ctx.region ?? "your area"
-  return `**Sustainability Guardian:** Namaste! AI Saathi is running in offline demo mode (add \`OPENAI_API_KEY\` to \`.env.local\` for full AI).
-
-**Crop Planner:** For ${region}, in **${ctx.season ?? "current season"}**, popular choices include Rice, Cotton, Maize, Chilli, and Groundnut. Select your location on the map for tailored scores.
-
-**Weather Expert:** Check the weather alerts card after setting your pincode — avoid spraying before heavy rain.
-
-**Plant Doctor:** Upload a clear leaf photo in Plant Doctor for demo disease analysis.
-
-**Soil Scientist:** For ${crop}: split urea in small doses; never exceed label MAX limits. Add FYM/compost each season.
-
-Regarding your question: *"${lastUserText.slice(0, 200)}"* — visit your local KVK for field-specific advice, or enable the OpenAI API key for detailed AI Saathi answers.
-
-⚠️ **Remember:** Overuse of water, urea, and pesticides damages soil health for future generations.`
-}
-
-function getLastUserText(messages: unknown[]): string {
-  const msgs = messages as Array<{ role?: string; parts?: Array<{ type: string; text?: string }> }>
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i]?.role === "user" && msgs[i].parts) {
-      return msgs[i].parts!
-        .filter((p) => p.type === "text")
-        .map((p) => p.text ?? "")
-        .join("")
-    }
-  }
-  return ""
+interface ChatRequestBody {
+  messages: UIMessage[]
+  context?: FarmContext
 }
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json()
-    const messages = body.messages ?? []
-    const context = (body.context ?? {}) as FarmContext
-    const system = buildAISaathiSystemPrompt(context)
-
-  if (!process.env.OPENAI_API_KEY) {
-    const reply = offlineSaathiReply(getLastUserText(messages), context)
-    const stream = createUIMessageStream({
-      execute: async ({ writer }) => {
-        writer.write({ type: "text-start", id: "offline" })
-        writer.write({ type: "text-delta", id: "offline", delta: reply })
-        writer.write({ type: "text-end", id: "offline" })
-      },
+  const body = (await req.json()) as ChatRequestBody | null
+  if (!body?.messages?.length) {
+    return new Response(JSON.stringify({ error: "Messages are required." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
     })
-    return createUIMessageStreamResponse({ stream })
   }
 
-    const result = streamText({
-      model: "openai/gpt-4o-mini",
-      system,
-      messages: await convertToModelMessages(messages),
-    })
+  const context = body.context
+  const systemPrompt = buildAISaathiSystemPrompt(context)
+  let weatherSummary = ""
 
-    return result.toUIMessageStreamResponse()
-  } catch (error) {
-    console.error("[AI Saathi]", error)
-    const stream = createUIMessageStream({
-      execute: async ({ writer }) => {
-        const msg =
-          "**Sustainability Guardian:** Sorry, AI Saathi encountered an error. Please try again. If this persists, check your API key in `.env.local`."
-        writer.write({ type: "text-start", id: "err" })
-        writer.write({ type: "text-delta", id: "err", delta: msg })
-        writer.write({ type: "text-end", id: "err" })
-      },
-    })
-    return createUIMessageStreamResponse({ stream })
+  if (context?.pincode || context?.locationLabel) {
+    try {
+      const locationQuery = context.pincode ?? context.locationLabel ?? ""
+      const location = await resolveSearchQuery(locationQuery)
+      if (location) {
+        const [current, forecast] = await Promise.all([
+          openWeatherCurrent(location.lat, location.lng),
+          openWeatherForecast(location.lat, location.lng),
+        ])
+
+        const dailyForecast = forecast.list.slice(0, 5)
+          .map((item: any) => `${item.dt_txt}: ${Math.round(item.main.temp)}°C, ${item.weather[0]?.description}`)
+          .join("; ")
+
+        weatherSummary = `\nWEATHER CONTEXT:\n- Location: ${location.label}\n- Temperature: ${Math.round(current.main.temp)}°C\n- Condition: ${current.weather[0]?.description || "unknown"}\n- Humidity: ${current.main.humidity}%\n- Rain in last hour: ${current.rain?.["1h"] ?? 0}mm\n- Forecast preview: ${dailyForecast}`
+      }
+    } catch (error) {
+      console.error("Weather enrichment failed:", error)
+    }
   }
+
+  if (!process.env.GROQ_API_KEY) {
+    console.error("Missing GROQ_API_KEY for AI Saathi chat route")
+    return new Response(JSON.stringify({ error: "AI key is not configured on the server." }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  const modelMessages = await convertToModelMessages(body.messages)
+  const model = groq("gpt-4o-mini")
+  const result = streamText({
+    model,
+    system: `${systemPrompt}\n${weatherSummary}`,
+    messages: modelMessages,
+    temperature: 0.7,
+  })
+
+  return result.toUIMessageStreamResponse()
 }

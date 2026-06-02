@@ -17,7 +17,7 @@ interface MarketPricesProps {
 export function MarketPrices({ location, crop }: MarketPricesProps) {
   const prices = useMemo(() => {
     if (!location || !crop) return []
-    return getNearbyMandiPrices(crop.name, location.lat, location.lng)
+    return getNearbyMandiPrices(crop.name, location)
   }, [location, crop])
 
   if (!location || !crop) return null
@@ -33,7 +33,7 @@ export function MarketPrices({ location, crop }: MarketPricesProps) {
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <Store className="h-4 w-4 text-primary" />
-          Mandi prices (within 200 km)
+          Mandi prices (near PIN {location.pincode ?? location.label})
         </CardTitle>
         <p className="text-[11px] text-muted-foreground">
           Best sell: {crop.bestSellWindow} · {crop.mandiHint}

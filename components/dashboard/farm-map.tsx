@@ -40,7 +40,12 @@ function MapController({ center, zoom }: { center: [number, number] | null; zoom
   const map = MapHook()
 
   useEffect(() => {
-    if (center) map.flyTo(center, zoom, { duration: 1.5 })
+    if (!center) return
+
+    map.whenReady(() => {
+      if (!map || !map.getContainer()) return
+      map.flyTo(center, zoom, { duration: 1.5 })
+    })
   }, [center, zoom, map])
 
   return null
@@ -81,23 +86,49 @@ export function FarmMap({ onLocationChange }: FarmMapProps) {
     }
   }, [])
 
+  const resolveSearchLocation = useCallback(async (query: string) => {
+    const trimmed = query.trim()
+    if (!trimmed) return null
+
+    try {
+      const response = await fetch("/api/location", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: trimmed }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data?.location) {
+          return data.location as LocationData
+        }
+      }
+    } catch (error) {
+      console.warn("AI location lookup failed, falling back to local search.", error)
+    }
+
+    const resolved = await resolveSearchQuery(trimmed)
+    return resolved ? toLocationData(resolved) : null
+  }, [])
+
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
     setIsSearching(true)
     setSearchError(null)
 
-    const resolved = await resolveSearchQuery(searchQuery)
+    const resolved = await resolveSearchLocation(searchQuery)
     if (resolved) {
-      const loc = toLocationData(resolved)
-      setSearchResult(loc)
-      setMapCenter([loc.lat, loc.lng])
+      setSearchResult(resolved)
+      setMapCenter([resolved.lat, resolved.lng])
     } else {
       setSearchError(
         "Location not found. Try: 6-digit pincode (e.g. 500001), village name + Telangana, or lat, lng"
       )
     }
     setIsSearching(false)
-  }, [searchQuery])
+  }, [resolveSearchLocation, searchQuery])
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -194,8 +225,8 @@ export function FarmMap({ onLocationChange }: FarmMapProps) {
               >
                 <MapController center={mapCenter} zoom={LOCATION_ZOOM} />
                 <TileLayer
-                  attribution='&copy; OSM | Esri'
-                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
                 {searchResult && markerIcon && (
                   <Marker position={[searchResult.lat, searchResult.lng]} icon={markerIcon}>

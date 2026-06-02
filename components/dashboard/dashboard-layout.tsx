@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { FarmMap, type LocationData } from "./farm-map"
 import { CropHealthCards } from "./crop-health-cards"
 import { Plant3DViewer } from "./plant-3d-viewer"
@@ -11,7 +12,7 @@ import { PlantDoctor } from "./plant-doctor"
 import { DailyActionPlan } from "./daily-action-plan"
 import { WeatherAlerts } from "./weather-alerts"
 import { MarketPrices } from "./market-prices"
-import { Tractor, Bell, X, MessageCircle } from "lucide-react"
+import { Tractor, Bell, X, MessageCircle, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,12 +20,22 @@ import { Sheet, SheetContent } from "@/components/ui/sheet"
 import type { CropRecommendation, IndianSeason } from "@/lib/agri-types"
 import { getCurrentSeasonHint } from "@/lib/agri-types"
 
-export function DashboardLayout() {
+interface DashboardLayoutProps {
+  user: {
+    name?: string
+    email: string
+    phone?: string
+    userId: string
+  }
+}
+
+export function DashboardLayout({ user }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null)
   const [selectedCrop, setSelectedCrop] = useState<CropRecommendation | null>(null)
   const [activeSeason, setActiveSeason] = useState<IndianSeason>(getCurrentSeasonHint())
+  const router = useRouter()
 
   const handleLocationChange = useCallback((location: LocationData | null) => {
     setCurrentLocation(location)
@@ -35,46 +46,127 @@ export function DashboardLayout() {
     setSelectedCrop(crop)
   }, [])
 
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    })
+    router.push("/")
+  }
+
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background lg:flex-row lg:h-dvh lg:overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-card/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:px-4">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-sm">
-              <Tractor className="h-5 w-5 text-primary-foreground" />
+        <header className="sticky top-0 z-40 border-b bg-background/90 px-4 py-3 backdrop-blur shadow-sm shadow-slate-900/5 sm:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-600 to-slate-900 text-white shadow-lg shadow-emerald-500/20">
+                <Tractor className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">AgriVision</h1>
+                <p className="mt-1 text-sm text-slate-600">Smart farm assistant for weather, crop planning, and disease alert.</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-base font-bold leading-none sm:text-lg">AgriVision</h1>
-              <p className="text-[10px] text-muted-foreground sm:text-xs">
-                AI Saathi · Sustainable Farming
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="relative h-9 w-9" aria-label="Notifications">
-              <Bell className="h-4 w-4" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 lg:hidden h-9"
-              onClick={() => setMobileChatOpen(true)}
-            >
-              <MessageCircle className="h-4 w-4" />
-              <span className="text-xs">AI Saathi</span>
-            </Button>
-            <Avatar className="hidden h-8 w-8 sm:flex">
-              <AvatarFallback className="bg-primary/10 text-xs">किसान</AvatarFallback>
-            </Avatar>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-950">Welcome back, {user.name ?? "Farmer"}</p>
+                <p className="text-xs text-slate-500">Signed in as {user.email}</p>
+              </div>
+              <Button variant="secondary" size="sm" className="gap-2 hidden sm:inline-flex">
+                <MessageCircle className="h-4 w-4" />
+                AI Saathi
+              </Button>
+              <Button variant="outline" size="sm" className="hidden sm:inline-flex gap-2" onClick={handleLogout}>
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Button>
+              <Button variant="ghost" size="icon" className="relative h-10 w-10" aria-label="Notifications">
+                <Bell className="h-4 w-4" />
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
+              </Button>
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-primary/10 text-xs">किसान</AvatarFallback>
+              </Avatar>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-          <div className="mb-3 sm:mb-4">
-            <h2 className="text-lg font-semibold sm:text-xl">Aapka Khet</h2>
-            <p className="text-xs text-muted-foreground sm:text-sm">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+          <div className="mb-4 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+            <section className="rounded-[2rem] bg-gradient-to-br from-emerald-600 via-slate-800 to-slate-950 p-6 text-white shadow-2xl shadow-slate-900/10">
+              <p className="text-xs uppercase tracking-[0.25em] text-emerald-200">AI Saathi Dashboard</p>
+              <h2 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl">Your farm, powered by insights.</h2>
+              <p className="mt-4 max-w-2xl text-sm text-emerald-100/90 sm:text-base">
+                AgriVision brings weather alerts, crop planning, disease diagnosis, and mandi pricing into a single, easy-to-use dashboard.
+              </p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
+                  <p className="text-3xl font-semibold">{currentLocation?.pincode ?? "--"}</p>
+                  <p className="mt-2 text-sm text-emerald-100/80">
+                    {currentLocation ? currentLocation.label : "Search your farm location to begin."}
+                  </p>
+                </div>
+                <div className="rounded-3xl border border-white/10 bg-white/10 p-4">
+                  <p className="text-3xl font-semibold">{selectedCrop?.name ?? "No crop selected"}</p>
+                  <p className="mt-2 text-sm text-emerald-100/80">
+                    {selectedCrop ? "Using crop-specific guidance" : "Pick a crop for tailored plans."}
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="mb-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <section className="rounded-[2rem] border border-slate-200/80 bg-white p-6 shadow-lg shadow-slate-900/5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Account</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-slate-950">Farmer profile</h3>
+                </div>
+                <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </Button>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-3xl bg-slate-50 p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Name</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">{user.name ?? "Farmer"}</p>
+                </div>
+                <div className="rounded-3xl bg-slate-50 p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Email</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">{user.email}</p>
+                </div>
+              </div>
+
+              {user.phone && (
+                <div className="mt-4 rounded-3xl bg-slate-50 p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Phone</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">+{user.phone}</p>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[2rem] border border-slate-200/80 bg-white p-6 shadow-lg shadow-slate-900/5">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Security</p>
+              <h3 className="mt-2 text-2xl font-semibold text-slate-950">Session settings</h3>
+              <p className="mt-3 text-sm text-slate-600">
+                Your login session is protected with secure credentials. Use Remember Me to stay signed in for 30 days on this device.
+              </p>
+              <div className="mt-5 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900">
+                <p className="font-semibold">Fast access</p>
+                <p className="mt-1">Keep your session active for 30 days when you choose Remember Me at login.</p>
+              </div>
+            </section>
+          </div>
+
+          <div className="mb-4 sm:mb-5">
+            <h2 className="text-lg font-semibold text-slate-950 sm:text-xl">Aapka Khet</h2>
+            <p className="mt-1 text-sm text-slate-500">
               Location · season · daily plan · disease check · mandi — all in one place
             </p>
           </div>

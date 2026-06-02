@@ -24,77 +24,147 @@ interface AnalysisResult {
   sustainableNote: string
 }
 
-const MOCK_ANALYSES: AnalysisResult[] = [
-  {
-    condition: "Leaf blast (Pyricularia) — early stage",
-    confidence: 78,
-    severity: "medium",
-    treatment: [
-      "Remove heavily infected leaves and burn away from field",
-      "Tricyclazole 75 WP @ label dose — only if spreading",
-      "Improve drainage; avoid excess nitrogen",
-    ],
-    sustainableNote:
-      "Do NOT spray prophylactically every week. One correct spray at ETL saves cost and protects beneficial insects.",
-  },
-  {
-    condition: "Aphid infestation — moderate",
-    confidence: 82,
-    severity: "low",
-    treatment: [
-      "Spray neem oil 5% in evening",
-      "Release natural predators; avoid broad-spectrum insecticides first",
-      "Monitor daily for 5 days before chemical fallback",
-    ],
-    sustainableNote: "Overuse of synthetic pesticides kills pollinators and increases pest resurgence.",
-  },
-  {
-    condition: "Nutrient deficiency (N) — yellowing lower leaves",
-    confidence: 71,
-    severity: "low",
-    treatment: [
-      "Split urea application — never single heavy dose",
-      "Soil test before adding more chemical fertilizer",
-      "Consider FYM or green manure for long-term soil health",
-    ],
-    sustainableNote: "Excess urea causes lodging, water pollution, and soil acidification over years.",
-  },
-]
-
 interface PlantDoctorProps {
   cropName?: string
+}
+
+interface DiseaseApiResult {
+  detected: boolean
+  diseaseName: string
+  severity: "none" | "mild" | "moderate" | "severe" | "critical"
+  confidence: number
+  affectedParts: string[]
+  symptoms: string[]
+  causes: string[]
+  treatment: {
+    immediate: string[]
+    chemical: string[]
+    organic: string[]
+    preventive: string[]
+  }
+  spreadRisk: "low" | "medium" | "high"
+  estimatedYieldLoss: string
+  urgency: "monitor" | "treat_soon" | "treat_immediately"
+  additionalNotes: string
+}
+
+interface PlantDoctorResult {
+  condition: string
+  confidence: number
+  severity: "low" | "medium" | "high"
+  immediate: string[]
+  chemical: string[]
+  organic: string[]
+  preventive: string[]
+  sustainableNote: string
+}
+
+async function compressImageFile(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Only image files can be analyzed.")
+  }
+
+  const bitmap = await createImageBitmap(file)
+  const maxDimension = 1024
+  let width = bitmap.width
+  let height = bitmap.height
+
+  if (width > maxDimension || height > maxDimension) {
+    const ratio = Math.min(maxDimension / width, maxDimension / height)
+    width = Math.round(width * ratio)
+    height = Math.round(height * ratio)
+  }
+
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext("2d")
+  if (!ctx) {
+    throw new Error("Unable to process the image.")
+  }
+
+  ctx.drawImage(bitmap, 0, 0, width, height)
+  return canvas.toDataURL("image/jpeg", 0.75)
 }
 
 export function PlantDoctor({ cropName }: PlantDoctorProps) {
   const [preview, setPreview] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [result, setResult] = useState<PlantDoctorResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const handleFile = (file: File | null) => {
+  const handleFile = async (file: File | null) => {
     if (!file) return
-    if (!file.type.startsWith("image/")) return
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload a valid plant image.")
+      return
+    }
+
     setFileName(file.name)
     setResult(null)
-    const reader = new FileReader()
-    reader.onload = () => setPreview(reader.result as string)
-    reader.readAsDataURL(file)
+    setError(null)
+
+    try {
+      const compressed = await compressImageFile(file)
+      setPreview(compressed)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to prepare image for analysis.")
+    }
   }
 
   const runAnalysis = async () => {
     if (!preview) return
+    setError(null)
     setIsAnalyzing(true)
-    await new Promise((r) => setTimeout(r, 1800))
-    const pick = MOCK_ANALYSES[Math.floor(Math.random() * MOCK_ANALYSES.length)]
-    setResult(pick)
-    setIsAnalyzing(false)
+
+    try {
+      const response = await fetch("/api/disease-detection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: preview, cropType: cropName || "general crop" }),
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.error || "AI analysis failed. Check your API key and network.")
+      }
+
+      const disease: DiseaseApiResult = payload?.result
+      if (!disease) {
+        throw new Error("No analysis result returned. Please check the image and try again.")
+      }
+
+      setResult({
+        condition: disease.diseaseName || "Unable to identify disease",
+        confidence: disease.confidence ?? 0,
+        severity:
+          disease.severity === "critical" || disease.severity === "severe"
+            ? "high"
+            : disease.severity === "moderate"
+            ? "medium"
+            : "low",
+        immediate: disease.treatment.immediate ?? [],
+        chemical: disease.treatment.chemical ?? [],
+        organic: disease.treatment.organic ?? [],
+        preventive: disease.treatment.preventive ?? [],
+        sustainableNote:
+          disease.additionalNotes ||
+          "Follow safe use of inputs and verify with your local agricultural extension officer.",
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to analyze image.")
+    } finally {
+      setIsAnalyzing(false)
+    }
   }
 
   const clear = () => {
     setPreview(null)
     setFileName(null)
     setResult(null)
+    setError(null)
     if (inputRef.current) inputRef.current.value = ""
   }
 
@@ -183,8 +253,17 @@ export function PlantDoctor({ cropName }: PlantDoctorProps) {
           </Button>
         )}
 
+        {error && (
+          <Alert variant="destructive" className="border-destructive/20 bg-destructive/10 py-2">
+            <AlertTitle className="text-xs font-medium">Analysis failed</AlertTitle>
+            <AlertDescription className="text-[11px]">
+              {error}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {result && (
-          <div className="space-y-2 overflow-auto flex-1">
+          <div className="space-y-3 overflow-auto flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className={cn("text-xs", severityColor[result.severity])}>
                 {result.severity} risk
@@ -194,14 +273,63 @@ export function PlantDoctor({ cropName }: PlantDoctorProps) {
               </span>
             </div>
             <p className="text-sm font-medium">{result.condition}</p>
-            <ul className="space-y-1 text-xs text-muted-foreground">
-              {result.treatment.map((t, i) => (
-                <li key={i} className="flex gap-1.5">
-                  <span className="text-primary">•</span>
-                  {t}
-                </li>
-              ))}
-            </ul>
+
+            {result.immediate.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Immediate actions</p>
+                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {result.immediate.map((item, index) => (
+                    <li key={index} className="flex gap-1.5">
+                      <span className="text-primary">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.chemical.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Pesticide / medicine suggestions</p>
+                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {result.chemical.map((item, index) => (
+                    <li key={index} className="flex gap-1.5">
+                      <span className="text-primary">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.organic.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Organic remedies</p>
+                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {result.organic.map((item, index) => (
+                    <li key={index} className="flex gap-1.5">
+                      <span className="text-primary">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.preventive.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Preventive measures</p>
+                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  {result.preventive.map((item, index) => (
+                    <li key={index} className="flex gap-1.5">
+                      <span className="text-primary">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <Alert className="border-primary/20 bg-primary/5 py-2">
               <ShieldCheck className="h-3.5 w-3.5" />
               <AlertTitle className="text-xs font-medium">Sustainability</AlertTitle>
@@ -211,7 +339,7 @@ export function PlantDoctor({ cropName }: PlantDoctorProps) {
             </Alert>
             <p className="text-[10px] text-muted-foreground flex items-start gap-1">
               <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-              Demo analysis — confirm with local KVK before spraying chemicals.
+              Analysis is AI-assisted. Confirm recommendations with your local agricultural extension before spraying chemicals.
             </p>
           </div>
         )}

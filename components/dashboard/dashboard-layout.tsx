@@ -74,10 +74,6 @@ export function DashboardLayout({ user }: DashboardLayoutProps) {
                 <p className="text-sm font-semibold text-slate-950">Welcome back, {user.name ?? "Farmer"}</p>
                 <p className="text-xs text-slate-500">Signed in as {user.email}</p>
               </div>
-              <Button variant="secondary" size="sm" className="gap-2 hidden sm:inline-flex">
-                <MessageCircle className="h-4 w-4" />
-                AI Saathi
-              </Button>
               <Button variant="outline" size="sm" className="hidden sm:inline-flex gap-2" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" />
                 Sign out

@@ -65,7 +65,7 @@ async function compressImageFile(file: File): Promise<string> {
   }
 
   const bitmap = await createImageBitmap(file)
-  const maxDimension = 1024
+  const maxDimension = 256
   let width = bitmap.width
   let height = bitmap.height
 

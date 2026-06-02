@@ -85,9 +85,6 @@ export function AIChatSidebar({
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      prepareSendMessagesRequest: ({ messages, id }) => ({
-        body: { messages, id, context: contextRef.current },
-      }),
     }),
   })
 
@@ -101,13 +98,19 @@ export function AIChatSidebar({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
-    sendMessage({ text: input })
+    sendMessage(
+      { text: input },
+      { body: { context: contextRef.current } },
+    )
     setInput("")
   }
 
   const handleSuggestion = (text: string) => {
     if (isLoading) return
-    sendMessage({ text })
+    sendMessage(
+      { text },
+      { body: { context: contextRef.current } },
+    )
   }
 
   function getMessageText(message: { parts?: Array<{ type: string; text?: string }> }): string {

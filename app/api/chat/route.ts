@@ -53,7 +53,8 @@ export async function POST(req: Request) {
   }
 
   const modelMessages = await convertToModelMessages(body.messages)
-  const model = groq("gpt-4o-mini")
+  const modelId = process.env.GROQ_MODEL ?? "groq/compound-mini"
+  const model = groq(modelId)
   const result = streamText({
     model,
     system: `${systemPrompt}\n${weatherSummary}`,

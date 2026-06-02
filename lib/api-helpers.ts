@@ -44,6 +44,7 @@ function getGroqBaseUrl() {
 
 export async function aiChat(payload: any): Promise<Response> {
   requireEnv("GROQ_API_KEY")
+  payload.model = payload.model ?? process.env.GROQ_MODEL ?? "groq/compound-mini"
   return fetch(`${getGroqBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {

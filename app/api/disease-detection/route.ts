@@ -30,8 +30,18 @@ export async function POST(req: NextRequest) {
   const contextHint = body.additionalContext ? `Additional context: ${body.additionalContext}` : ""
 
   try {
+    const promptText = [
+      "Diagnose the plant from the image.",
+      cropHint,
+      contextHint,
+      `Image data: data:image/jpeg;base64,${base64Image}`,
+      "Return only valid JSON with the requested schema. Identify the likely disease or pest, affected plant part, symptoms, causes, spread risk, and suggest immediate actions, pesticide/chemical remedies, organic alternatives, and preventive measures. Use practical terms for smallholder farmers.",
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+
     const aiRes = await aiChat({
-      model: "gpt-4o",
+      model: process.env.GROQ_MODEL ?? "groq/compound-mini",
       max_tokens: 1000,
       response_format: { type: "json_object" },
       messages: [
@@ -42,16 +52,7 @@ export async function POST(req: NextRequest) {
         },
         {
           role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:image/jpeg;base64,${base64Image}` },
-            },
-            {
-              type: "text",
-              text: `Diagnose the plant from the image. ${cropHint} ${contextHint} Identify the likely disease or pest, affected plant part, symptoms, causes, spread risk, and suggest immediate actions, pesticide/chemical remedies, organic alternatives, and preventive measures. Use practical terms for smallholder farmers.`.trim(),
-            },
-          ],
+          content: promptText,
         },
       ],
     })
@@ -90,10 +91,16 @@ export async function POST(req: NextRequest) {
     const result = parseJson(raw)
     if (!result) {
       console.error("Unable to parse AI disease response:", raw)
-      return errorResponse("AI analysis returned invalid JSON.", 502)
+      if (typeof raw === "string" && raw.toLowerCase().includes("view images")) {
+        return errorResponse(
+          "The configured Groq model cannot analyze images directly. Please describe the symptoms in text or use a vision-capable model.",
+          502
+        )
+      }
+      return errorResponse("AI analysis returned invalid JSON. Please try again.", 502)
     }
 
-    return successResponse({ result, analyzedAt: new Date().toISOString(), model: "gpt-4o" })
+    return successResponse({ result, analyzedAt: new Date().toISOString(), model: process.env.GROQ_MODEL ?? "groq/compound-mini" })
   } catch (err) {
     console.error("Disease detection error:", err)
     return errorResponse("Failed to analyze image. Please try again.")

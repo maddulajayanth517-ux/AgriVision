@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     }
 
     const payload = {
-      model: "gpt-4o",
+      model: process.env.GROQ_MODEL ?? "groq/compound-mini",
       max_tokens: 550,
       messages: [
         {

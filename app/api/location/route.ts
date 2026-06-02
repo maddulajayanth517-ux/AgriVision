@@ -32,7 +32,7 @@ async function parseLocationQueryWithAI(input: string): Promise<AIParsedLocation
 
     const user = `Parse this search input into structured location data: "${input.trim()}"`
     const res = await aiChat({
-      model: "gpt-4o-mini",
+      model: process.env.GROQ_MODEL ?? "groq/compound-mini",
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
